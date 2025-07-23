@@ -5,6 +5,7 @@ import SpreadsheetGrid, { Column } from '@/components/SpreadsheetGrid'
 import { Badge } from '@/components/ui/badge'
 import { Star } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import * as XLSX from 'xlsx'
 
 const SOURCING_CHANNELS = [
   'LinkedIn', 'Naukri', 'Indeed', 'Referral', 'Company Website', 'Job Portal'
@@ -20,33 +21,38 @@ export default function Candidates() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const { toast } = useToast()
 
-  const columns: Column[] = [
+  // Column configuration with visibility management
+  const [columns, setColumns] = useState<Column[]>([
     {
       key: 'firstName',
       label: 'First Name',
       width: 120,
       sortable: true,
-      type: 'text'
+      type: 'text',
+      visible: true
     },
     {
       key: 'lastName',
       label: 'Last Name',
       width: 120,
       sortable: true,
-      type: 'text'
+      type: 'text',
+      visible: true
     },
     {
       key: 'email',
       label: 'Email',
       width: 200,
       sortable: true,
-      type: 'email'
+      type: 'email',
+      visible: true
     },
     {
       key: 'mobile',
-      label: 'Phone',
+      label: 'Mobile',
       width: 130,
       type: 'phone',
+      visible: true,
       render: (value, row) => `${row.countryCode} ${value}`
     },
     {
@@ -54,19 +60,22 @@ export default function Candidates() {
       label: 'Gender',
       width: 100,
       type: 'select',
-      options: GENDERS
+      options: GENDERS,
+      visible: true
     },
     {
       key: 'sourcingChannel',
       label: 'Sourcing Channel',
       width: 140,
       type: 'select',
-      options: SOURCING_CHANNELS
+      options: SOURCING_CHANNELS,
+      visible: true
     },
     {
       key: 'rating',
       label: 'Rating',
       width: 120,
+      visible: true,
       render: (value) => (
         <div className="flex items-center space-x-1">
           {[1, 2, 3, 4, 5].map((star) => (
@@ -84,16 +93,63 @@ export default function Candidates() {
       key: 'education',
       label: 'Education',
       width: 180,
-      type: 'text'
+      type: 'text',
+      visible: true
+    },
+    {
+      key: 'url',
+      label: 'URL',
+      width: 200,
+      type: 'text',
+      visible: false
+    },
+    {
+      key: 'tags',
+      label: 'Tags',
+      width: 150,
+      type: 'text',
+      visible: false,
+      render: (value) => value ? (
+        <div className="flex flex-wrap gap-1">
+          {(Array.isArray(value) ? value : [value]).map((tag, index) => (
+            <Badge key={index} variant="secondary" className="text-xs">
+              {tag}
+            </Badge>
+          ))}
+        </div>
+      ) : null
+    },
+    {
+      key: 'resumeAttachment',
+      label: 'Resume',
+      width: 100,
+      visible: false,
+      render: (value) => value ? (
+        <Badge variant="outline">Attached</Badge>
+      ) : (
+        <Badge variant="secondary">None</Badge>
+      )
+    },
+    {
+      key: 'profilePicture',
+      label: 'Profile Picture',
+      width: 120,
+      visible: false,
+      render: (value) => value ? (
+        <Badge variant="outline">Yes</Badge>
+      ) : (
+        <Badge variant="secondary">No</Badge>
+      )
     },
     {
       key: 'createdOn',
       label: 'Created On',
       width: 120,
       sortable: true,
+      visible: false,
       render: (value) => new Date(value).toLocaleDateString()
     }
-  ]
+  ])
 
   const filteredAndSortedData = useMemo(() => {
     const filtered = candidates.filter((candidate) =>
@@ -168,59 +224,207 @@ export default function Candidates() {
     })
   }
 
+  const handleColumnVisibilityChange = (columnKey: string, visible: boolean) => {
+    setColumns(prev => 
+      prev.map(col => 
+        col.key === columnKey ? { ...col, visible } : col
+      )
+    )
+  }
+
+  const handleColumnReorder = (newColumns: Column[]) => {
+    setColumns(newColumns)
+  }
+
   const getSelectedCandidates = () => {
     return candidates.filter(candidate => selectedRows.includes(candidate.id))
   }
 
-  const handleCopyAsText = () => {
+  const handleCopyAsText = async (visibleColumns: Column[]) => {
     const selectedCandidates = getSelectedCandidates()
-    const textContent = selectedCandidates.map(candidate => {
-      return `<div style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">
-        <h3 style="margin: 0 0 10px 0; color: #333;">${candidate.firstName} ${candidate.lastName}</h3>
-        <p><strong>Email:</strong> ${candidate.email}</p>
-        <p><strong>Phone:</strong> ${candidate.countryCode} ${candidate.mobile}</p>
-        <p><strong>Gender:</strong> ${candidate.gender || 'Not specified'}</p>
-        <p><strong>Sourcing Channel:</strong> ${candidate.sourcingChannel || 'Not specified'}</p>
-        <p><strong>Education:</strong> ${candidate.education || 'Not specified'}</p>
-        <p><strong>Rating:</strong> ${'★'.repeat(candidate.rating)}${'☆'.repeat(5 - candidate.rating)}</p>
-      </div>`
+    
+    if (selectedCandidates.length === 0) {
+      toast({
+        title: "No candidates selected",
+        description: "Please select candidates to copy.",
+        variant: "destructive"
+      })
+      return
+    }
+    
+    // Create simple, clean text format that looks professional in emails
+    const textContent = selectedCandidates.map((candidate, index) => {
+      const fullName = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim()
+      const phone = `${candidate.countryCode} ${candidate.mobile}`.trim()
+      
+      return `${index + 1}. ${fullName}
+Phone: ${phone}
+Email: ${candidate.email || ''}
+Education: ${candidate.education || 'Not specified'}
+Sourcing Channel: ${candidate.sourcingChannel || 'Not specified'}
+Rating: ${candidate.rating}/5`
+    }).join('\n\n')
+
+    // Add header text
+    const fullContent = `Dear Client,
+
+Please find below the candidate details:
+
+${textContent}`
+
+    try {
+      await navigator.clipboard.writeText(fullContent)
+      toast({
+        title: "Copied as text",
+        description: `${selectedCandidates.length} candidates copied in text format for email.`,
+      })
+    } catch (error) {
+      toast({
+        title: "Copy failed",
+        description: "Unable to copy to clipboard. Please try again.",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleCopyAsSpreadsheet = async (visibleColumns: Column[]) => {
+    const selectedCandidates = getSelectedCandidates()
+    
+    if (selectedCandidates.length === 0) {
+      toast({
+        title: "No candidates selected",
+        description: "Please select candidates to export.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    // Create HTML table headers based on visible columns
+    const headers = visibleColumns.map(col => 
+      `<th style="border: 1px solid #ccc; padding: 8px; text-align: left; background-color: #f5f5f5;">${col.label}</th>`
+    ).join('')
+
+    // Create HTML table rows based on visible columns
+    const tableRows = selectedCandidates.map(candidate => {
+      const cells = visibleColumns.map(col => {
+        let value = candidate[col.key as keyof Candidate]
+        
+        // Handle special rendering
+        if (col.key === 'mobile') {
+          value = `${candidate.countryCode} ${candidate.mobile}`
+        } else if (col.key === 'rating') {
+          value = `${value}/5`
+        } else if (col.key === 'createdOn' || col.key === 'lastModifiedOn') {
+          value = new Date(value as string).toLocaleDateString()
+        } else if (Array.isArray(value)) {
+          value = value.join(', ')
+        }
+        
+        return `<td style="border: 1px solid #ccc; padding: 8px;">${value || ''}</td>`
+      }).join('')
+      
+      return `<tr>${cells}</tr>`
     }).join('')
 
-    navigator.clipboard.writeText(textContent)
-    toast({
-      title: "Copied as text",
-      description: `${selectedCandidates.length} candidates copied in HTML format.`,
-    })
+    // Create complete HTML table with proper styling for email clients
+    const htmlTable = `<p>Dear Client,</p>
+<table style="border-collapse: collapse; width: 100%; font-family: Arial, sans-serif;">
+  <thead>
+    <tr>${headers}</tr>
+  </thead>
+  <tbody>
+    ${tableRows}
+  </tbody>
+</table>`
+
+    try {
+      // Use ClipboardItem API for proper HTML copying
+      const clipboardItem = new ClipboardItem({
+        'text/html': new Blob([htmlTable], { type: 'text/html' }),
+        'text/plain': new Blob([htmlTable.replace(/<[^>]*>/g, '')], { type: 'text/plain' })
+      })
+      
+      await navigator.clipboard.write([clipboardItem])
+      
+      toast({
+        title: "Copied as spreadsheet",
+        description: `${selectedCandidates.length} candidates copied as HTML table. Paste into email.`,
+      })
+    } catch (error) {
+      // Fallback for browsers that don't support ClipboardItem
+      try {
+        await navigator.clipboard.writeText(htmlTable)
+        toast({
+          title: "Copied as spreadsheet",
+          description: `${selectedCandidates.length} candidates copied. Paste into email.`,
+        })
+      } catch (fallbackError) {
+        toast({
+          title: "Copy failed",
+          description: "Unable to copy to clipboard. Please try again.",
+          variant: "destructive"
+        })
+      }
+    }
   }
 
-  const handleCopyAsSpreadsheet = () => {
+  const handleExportToXLS = (visibleColumns: Column[]) => {
     const selectedCandidates = getSelectedCandidates()
-    const headers = ['First Name', 'Last Name', 'Email', 'Phone', 'Gender', 'Sourcing Channel', 'Education', 'Rating']
-    const rows = selectedCandidates.map(candidate => [
-      candidate.firstName,
-      candidate.lastName,
-      candidate.email,
-      `${candidate.countryCode} ${candidate.mobile}`,
-      candidate.gender || '',
-      candidate.sourcingChannel || '',
-      candidate.education || '',
-      candidate.rating.toString()
-    ])
+    
+    if (selectedCandidates.length === 0) {
+      toast({
+        title: "No candidates selected",
+        description: "Please select candidates to export.",
+        variant: "destructive"
+      })
+      return
+    }
 
-    const tsvContent = [headers, ...rows].map(row => row.join('\t')).join('\n')
-    navigator.clipboard.writeText(tsvContent)
-    toast({
-      title: "Copied as spreadsheet",
-      description: `${selectedCandidates.length} candidates copied in spreadsheet format.`,
+    // Prepare data for Excel export based on visible columns
+    const exportData = selectedCandidates.map(candidate => {
+      const row: any = {}
+      
+      visibleColumns.forEach(col => {
+        let value = candidate[col.key as keyof Candidate]
+        
+        // Handle special formatting
+        if (col.key === 'mobile') {
+          value = `${candidate.countryCode} ${candidate.mobile}`
+        } else if (col.key === 'rating') {
+          value = `${value}/5`
+        } else if (col.key === 'createdOn' || col.key === 'lastModifiedOn') {
+          value = new Date(value as string).toLocaleDateString()
+        } else if (Array.isArray(value)) {
+          value = value.join(', ')
+        }
+        
+        row[col.label] = value || ''
+      })
+      
+      return row
     })
-  }
 
-  const handleExportToXLS = () => {
-    const selectedCandidates = getSelectedCandidates()
-    // In a real app, you would use a library like xlsx to generate the file
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(exportData)
+
+    // Set column widths based on visible columns
+    const colWidths = visibleColumns.map(col => ({ wch: col.width ? col.width / 8 : 15 }))
+    ws['!cols'] = colWidths
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Candidates')
+
+    // Generate filename with timestamp
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-')
+    const filename = `candidates-export-${timestamp}.xlsx`
+
+    // Save file
+    XLSX.writeFile(wb, filename)
+
     toast({
-      title: "Export to XLS",
-      description: `Would export ${selectedCandidates.length} candidates to Excel file.`,
+      title: "Export successful",
+      description: `${selectedCandidates.length} candidates exported to ${filename}`,
     })
   }
 
@@ -238,6 +442,8 @@ export default function Candidates() {
         searchValue={searchValue}
         onSearchChange={setSearchValue}
         title="Candidates"
+        onColumnVisibilityChange={handleColumnVisibilityChange}
+        onColumnReorder={handleColumnReorder}
         exportOptions={{
           onCopyAsText: handleCopyAsText,
           onCopyAsSpreadsheet: handleCopyAsSpreadsheet,

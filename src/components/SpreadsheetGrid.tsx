@@ -17,13 +17,19 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { 
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { 
   ArrowUpDown, 
   Eye, 
   Copy, 
   FileSpreadsheet, 
   Download,
   MoreHorizontal,
-  Plus
+  Plus,
+  GripVertical
 } from 'lucide-react'
 
 export interface Column {
@@ -34,6 +40,7 @@ export interface Column {
   type?: 'text' | 'number' | 'select' | 'date' | 'email' | 'phone'
   options?: string[]
   render?: (value: any, row: any) => React.ReactNode
+  visible?: boolean
 }
 
 interface SpreadsheetGridProps {
@@ -48,10 +55,12 @@ interface SpreadsheetGridProps {
   searchValue: string
   onSearchChange: (value: string) => void
   title: string
+  onColumnVisibilityChange: (columnKey: string, visible: boolean) => void
+  onColumnReorder: (columns: Column[]) => void
   exportOptions: {
-    onCopyAsText: () => void
-    onCopyAsSpreadsheet: () => void
-    onExportToXLS: () => void
+    onCopyAsText: (visibleColumns: Column[]) => void
+    onCopyAsSpreadsheet: (visibleColumns: Column[]) => void
+    onExportToXLS: (visibleColumns: Column[]) => void
   }
 }
 
@@ -67,16 +76,47 @@ export default function SpreadsheetGrid({
   searchValue,
   onSearchChange,
   title,
+  onColumnVisibilityChange,
+  onColumnReorder,
   exportOptions
 }: SpreadsheetGridProps) {
   const [editingCell, setEditingCell] = useState<{ rowId: string; columnKey: string } | null>(null)
   const [editValue, setEditValue] = useState('')
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [draggedColumn, setDraggedColumn] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const allSelected = data.length > 0 && selectedRows.length === data.length
   const someSelected = selectedRows.length > 0 && selectedRows.length < data.length
+  
+  // Get visible columns
+  const visibleColumns = columns.filter(col => col.visible !== false)
+  
+  // Column drag and drop handlers
+  const handleColumnDragStart = (columnKey: string) => {
+    setDraggedColumn(columnKey)
+  }
+  
+  const handleColumnDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+  }
+  
+  const handleColumnDrop = (targetColumnKey: string) => {
+    if (!draggedColumn || draggedColumn === targetColumnKey) return
+    
+    const newColumns = [...columns]
+    const draggedIndex = newColumns.findIndex(col => col.key === draggedColumn)
+    const targetIndex = newColumns.findIndex(col => col.key === targetColumnKey)
+    
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      const [draggedCol] = newColumns.splice(draggedIndex, 1)
+      newColumns.splice(targetIndex, 0, draggedCol)
+      onColumnReorder(newColumns)
+    }
+    
+    setDraggedColumn(null)
+  }
 
   const handleCellClick = useCallback((rowId: string, columnKey: string, currentValue: any) => {
     setEditingCell({ rowId, columnKey })
@@ -185,23 +225,46 @@ export default function SpreadsheetGrid({
         </div>
         
         <div className="flex items-center space-x-2">
-          {/* Export Options */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          {/* Column Visibility */}
+          <Popover>
+            <PopoverTrigger asChild>
               <Button variant="outline" size="sm">
                 <Eye className="h-4 w-4 mr-2" />
                 Columns
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem>Manage Columns</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </PopoverTrigger>
+            <PopoverContent className="w-80" align="end">
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm">Column Visibility</h4>
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {columns.map((column) => (
+                    <div
+                      key={column.key}
+                      className="flex items-center space-x-2 p-2 rounded hover:bg-gray-50 cursor-move"
+                      draggable
+                      onDragStart={() => handleColumnDragStart(column.key)}
+                      onDragOver={handleColumnDragOver}
+                      onDrop={() => handleColumnDrop(column.key)}
+                    >
+                      <GripVertical className="h-4 w-4 text-gray-400" />
+                      <Checkbox
+                        checked={column.visible !== false}
+                        onCheckedChange={(checked) => 
+                          onColumnVisibilityChange(column.key, !!checked)
+                        }
+                      />
+                      <span className="text-sm flex-1">{column.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
 
           <Button
             variant="outline"
             size="sm"
-            onClick={exportOptions.onCopyAsText}
+            onClick={() => exportOptions.onCopyAsText(visibleColumns)}
             disabled={selectedRows.length === 0}
           >
             <Copy className="h-4 w-4 mr-2" />
@@ -211,7 +274,7 @@ export default function SpreadsheetGrid({
           <Button
             variant="outline"
             size="sm"
-            onClick={exportOptions.onCopyAsSpreadsheet}
+            onClick={() => exportOptions.onCopyAsSpreadsheet(visibleColumns)}
             disabled={selectedRows.length === 0}
           >
             <FileSpreadsheet className="h-4 w-4 mr-2" />
@@ -221,7 +284,7 @@ export default function SpreadsheetGrid({
           <Button
             variant="outline"
             size="sm"
-            onClick={exportOptions.onExportToXLS}
+            onClick={() => exportOptions.onExportToXLS(visibleColumns)}
             disabled={selectedRows.length === 0}
           >
             <Download className="h-4 w-4 mr-2" />
@@ -249,7 +312,7 @@ export default function SpreadsheetGrid({
                   onCheckedChange={(checked) => onSelectAll(!!checked)}
                 />
               </th>
-              {columns.map((column) => (
+              {visibleColumns.map((column) => (
                 <th
                   key={column.key}
                   className={cn(
@@ -287,7 +350,7 @@ export default function SpreadsheetGrid({
                     onCheckedChange={(checked) => onRowSelect(row.id, !!checked)}
                   />
                 </td>
-                {columns.map((column) => (
+                {visibleColumns.map((column) => (
                   <td
                     key={column.key}
                     className="border-b border-gray-100"

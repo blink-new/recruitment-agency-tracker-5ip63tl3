@@ -4,10 +4,10 @@ import { Application, APPLICATION_STATUS_LABELS, APPLICATION_STAGE_LABELS } from
 import SpreadsheetGrid, { Column } from '@/components/SpreadsheetGrid'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
+import * as XLSX from 'xlsx'
 
 const NOTICE_PERIOD_OPTIONS = ['0', '15', '30', '45', '60', '90']
-const YES_NO_MAYBE_OPTIONS = ['Yes', 'No', 'Maybe']
-const YES_NO_OPTIONS = ['Yes', 'No']
+const NOTICE_PERIOD_NEGOTIABLE_OPTIONS = ['Yes', 'Maybe', 'No']
 const SERVING_NOTICE_OPTIONS = ['Yes', 'No', 'Already Served']
 const OFFER_IN_HAND_OPTIONS = ['Yes', 'No', 'Advanced Stages']
 const LIKELIHOOD_OPTIONS = ['Low', 'Medium', 'High']
@@ -20,139 +20,141 @@ export default function Applications() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const { toast } = useToast()
 
-  // Create lookup maps for display
-  const candidateMap = useMemo(() => {
-    return mockCandidates.reduce((acc, candidate) => {
-      acc[candidate.id] = `${candidate.firstName} ${candidate.lastName}`
-      return acc
-    }, {} as Record<string, string>)
-  }, [])
-
-  const jobMap = useMemo(() => {
-    return mockJobs.reduce((acc, job) => {
-      acc[job.id] = job.jobTitle
-      return acc
-    }, {} as Record<string, string>)
-  }, [])
-
-  const getStatusBadgeColor = (status: number) => {
-    if (status >= 8 && status <= 11) return 'bg-green-100 text-green-800'
-    if (status >= 5 && status <= 7) return 'bg-blue-100 text-blue-800'
-    if (status >= 2 && status <= 4) return 'bg-yellow-100 text-yellow-800'
-    return 'bg-gray-100 text-gray-800'
-  }
-
-  const getStageBadgeColor = (stage: number) => {
-    const colors = {
-      0: 'bg-gray-100 text-gray-800',
-      1: 'bg-blue-100 text-blue-800',
-      2: 'bg-yellow-100 text-yellow-800',
-      3: 'bg-purple-100 text-purple-800',
-      4: 'bg-green-100 text-green-800'
-    }
-    return colors[stage as keyof typeof colors] || 'bg-gray-100 text-gray-800'
-  }
-
-  const columns: Column[] = [
+  // Column configuration with visibility management
+  const [columns, setColumns] = useState<Column[]>([
     {
-      key: 'candidateId',
-      label: 'Candidate',
+      key: 'candidateName',
+      label: 'Candidate Name',
       width: 150,
       sortable: true,
-      render: (value) => candidateMap[value] || 'Unknown'
+      visible: true,
+      render: (_, row) => {
+        const candidate = mockCandidates.find(c => c.id === row.candidateId)
+        return candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown'
+      }
     },
     {
-      key: 'jobId',
-      label: 'Job',
+      key: 'jobTitle',
+      label: 'Job Title',
       width: 180,
       sortable: true,
-      render: (value) => jobMap[value] || 'Unknown'
+      visible: true,
+      render: (_, row) => {
+        const job = mockJobs.find(j => j.id === row.jobId)
+        return job ? job.jobTitle : 'Unknown Job'
+      }
     },
     {
       key: 'pipelinePriority',
-      label: 'Priority',
-      width: 80,
-      type: 'number'
+      label: 'Pipeline Priority',
+      width: 120,
+      type: 'number',
+      sortable: true,
+      visible: true
     },
     {
       key: 'totalYears',
-      label: 'Total Exp',
-      width: 90,
+      label: 'Total Years',
+      width: 100,
       type: 'number',
-      render: (value) => `${value} yrs`
+      sortable: true,
+      visible: true
     },
     {
       key: 'currentJobTitle',
-      label: 'Current Role',
-      width: 150,
-      type: 'text'
+      label: 'Current Job Title',
+      width: 180,
+      type: 'text',
+      visible: true
     },
     {
       key: 'ctcInLPA',
-      label: 'Current CTC',
+      label: 'CTC (LPA)',
       width: 100,
       type: 'number',
-      render: (value) => `${value} LPA`
+      sortable: true,
+      visible: true,
+      render: (value) => `₹${value} LPA`
     },
     {
       key: 'ectcInLPA',
-      label: 'Expected CTC',
-      width: 110,
+      label: 'ECTC (LPA)',
+      width: 100,
       type: 'number',
-      render: (value) => `${value} LPA`
+      sortable: true,
+      visible: true,
+      render: (value) => `₹${value} LPA`
     },
     {
       key: 'officialNoticePeriodInDays',
-      label: 'Notice Period',
-      width: 110,
+      label: 'Notice Period (Days)',
+      width: 140,
       type: 'select',
       options: NOTICE_PERIOD_OPTIONS,
+      visible: true,
       render: (value) => `${value} days`
     },
     {
       key: 'noticePeriodNegotiable',
-      label: 'NP Negotiable',
-      width: 110,
+      label: 'Notice Negotiable',
+      width: 130,
       type: 'select',
-      options: YES_NO_MAYBE_OPTIONS
+      options: NOTICE_PERIOD_NEGOTIABLE_OPTIONS,
+      visible: true,
+      render: (value) => (
+        <Badge variant={value === 'Yes' ? 'default' : value === 'Maybe' ? 'secondary' : 'outline'}>
+          {value}
+        </Badge>
+      )
     },
     {
       key: 'servingNoticePeriod',
-      label: 'Serving NP',
-      width: 100,
+      label: 'Serving Notice',
+      width: 120,
       type: 'select',
-      options: SERVING_NOTICE_OPTIONS
+      options: SERVING_NOTICE_OPTIONS,
+      visible: true,
+      render: (value) => (
+        <Badge variant={value === 'Yes' ? 'destructive' : value === 'Already Served' ? 'default' : 'secondary'}>
+          {value}
+        </Badge>
+      )
     },
     {
       key: 'offerInHand',
-      label: 'Offer in Hand',
-      width: 110,
+      label: 'Offer In Hand',
+      width: 120,
       type: 'select',
-      options: OFFER_IN_HAND_OPTIONS
-    },
-    {
-      key: 'currentOfferInLPA',
-      label: 'Current Offer',
-      width: 110,
-      type: 'number',
-      render: (value) => value ? `${value} LPA` : '-'
+      options: OFFER_IN_HAND_OPTIONS,
+      visible: true,
+      render: (value) => (
+        <Badge variant={value === 'Yes' ? 'destructive' : value === 'Advanced Stages' ? 'secondary' : 'outline'}>
+          {value}
+        </Badge>
+      )
     },
     {
       key: 'applicationStage',
-      label: 'Stage',
-      width: 120,
+      label: 'Application Stage',
+      width: 140,
+      type: 'select',
+      options: Object.keys(APPLICATION_STAGE_LABELS),
+      visible: true,
       render: (value) => (
-        <Badge className={getStageBadgeColor(value)}>
+        <Badge variant="outline">
           {APPLICATION_STAGE_LABELS[value as keyof typeof APPLICATION_STAGE_LABELS]}
         </Badge>
       )
     },
     {
       key: 'applicationStatus',
-      label: 'Status',
-      width: 140,
+      label: 'Application Status',
+      width: 150,
+      type: 'select',
+      options: Object.keys(APPLICATION_STATUS_LABELS),
+      visible: true,
       render: (value) => (
-        <Badge className={getStatusBadgeColor(value)}>
+        <Badge variant="default">
           {APPLICATION_STATUS_LABELS[value as keyof typeof APPLICATION_STATUS_LABELS]}
         </Badge>
       )
@@ -163,68 +165,134 @@ export default function Applications() {
       width: 100,
       type: 'select',
       options: LIKELIHOOD_OPTIONS,
-      render: (value) => {
-        const colors = {
-          'High': 'bg-green-100 text-green-800',
-          'Medium': 'bg-yellow-100 text-yellow-800',
-          'Low': 'bg-red-100 text-red-800'
-        }
-        return (
-          <Badge className={colors[value as keyof typeof colors]}>
-            {value}
-          </Badge>
-        )
-      }
+      visible: true,
+      render: (value) => (
+        <Badge variant={value === 'High' ? 'default' : value === 'Medium' ? 'secondary' : 'outline'}>
+          {value}
+        </Badge>
+      )
+    },
+    {
+      key: 'relevantExpYears',
+      label: 'Relevant Exp',
+      width: 120,
+      type: 'number',
+      visible: true,
+      render: (value) => `${value} years`
     },
     {
       key: 'currentCompany',
       label: 'Current Company',
-      width: 140,
-      type: 'text'
+      width: 150,
+      type: 'text',
+      visible: false
     },
     {
       key: 'currentLocation',
-      label: 'Location',
+      label: 'Current Location',
+      width: 140,
+      type: 'text',
+      visible: false
+    },
+    {
+      key: 'internalComments',
+      label: 'Internal Comments',
+      width: 200,
+      type: 'text',
+      visible: false
+    },
+    {
+      key: 'datavrutiComments',
+      label: 'Datavruti Comments',
+      width: 200,
+      type: 'text',
+      visible: false
+    },
+    {
+      key: 'ctcBreakup',
+      label: 'CTC Breakup',
+      width: 150,
+      type: 'text',
+      visible: false
+    },
+    {
+      key: 'currentOfferInLPA',
+      label: 'Current Offer (LPA)',
+      width: 140,
+      type: 'number',
+      visible: false,
+      render: (value) => value ? `₹${value} LPA` : 'N/A'
+    },
+    {
+      key: 'lastWorkingDate',
+      label: 'Last Working Date',
+      width: 140,
+      type: 'date',
+      visible: false,
+      render: (value) => value ? new Date(value).toLocaleDateString() : 'N/A'
+    },
+    {
+      key: 'earliestJoiningDate',
+      label: 'Earliest Joining',
+      width: 140,
+      type: 'date',
+      visible: false,
+      render: (value) => value ? new Date(value).toLocaleDateString() : 'N/A'
+    },
+    {
+      key: 'reasonForChange',
+      label: 'Reason For Change',
+      width: 180,
+      type: 'text',
+      visible: false
+    },
+    {
+      key: 'dateOfJoining',
+      label: 'Date Of Joining',
+      width: 140,
+      type: 'date',
+      visible: false,
+      render: (value) => value ? new Date(value).toLocaleDateString() : 'N/A'
+    },
+    {
+      key: 'reasonForRejectDrop',
+      label: 'Reason For Reject/Drop',
+      width: 180,
+      type: 'text',
+      visible: false
+    },
+    {
+      key: 'latestResumeAttachment',
+      label: 'Latest Resume',
       width: 120,
-      type: 'text'
+      visible: false,
+      render: (value) => value ? (
+        <Badge variant="outline">Attached</Badge>
+      ) : (
+        <Badge variant="secondary">None</Badge>
+      )
     },
     {
       key: 'createdOn',
-      label: 'Applied On',
-      width: 110,
+      label: 'Created On',
+      width: 120,
       sortable: true,
+      visible: false,
       render: (value) => new Date(value).toLocaleDateString()
     }
-  ]
+  ])
 
   const filteredAndSortedData = useMemo(() => {
-    const filtered = applications.filter((application) => {
-      const candidateName = candidateMap[application.candidateId] || ''
-      const jobTitle = jobMap[application.jobId] || ''
-      const searchText = searchValue.toLowerCase()
-      
-      return (
-        candidateName.toLowerCase().includes(searchText) ||
-        jobTitle.toLowerCase().includes(searchText) ||
-        application.currentJobTitle.toLowerCase().includes(searchText) ||
-        application.currentCompany.toLowerCase().includes(searchText) ||
-        application.currentLocation.toLowerCase().includes(searchText)
+    const filtered = applications.filter((application) =>
+      Object.values(application).some((value) =>
+        value?.toString().toLowerCase().includes(searchValue.toLowerCase())
       )
-    })
+    )
 
     if (sortColumn) {
       filtered.sort((a, b) => {
-        let aValue = a[sortColumn as keyof Application]
-        let bValue = b[sortColumn as keyof Application]
-        
-        // Handle candidate and job lookups for sorting
-        if (sortColumn === 'candidateId') {
-          aValue = candidateMap[a.candidateId]
-          bValue = candidateMap[b.candidateId]
-        } else if (sortColumn === 'jobId') {
-          aValue = jobMap[a.jobId]
-          bValue = jobMap[b.jobId]
-        }
+        const aValue = a[sortColumn as keyof Application]
+        const bValue = b[sortColumn as keyof Application]
         
         if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
         if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
@@ -233,7 +301,7 @@ export default function Applications() {
     }
 
     return filtered
-  }, [applications, searchValue, sortColumn, sortDirection, candidateMap, jobMap])
+  }, [applications, searchValue, sortColumn, sortDirection])
 
   const handleRowSelect = (rowId: string, selected: boolean) => {
     setSelectedRows(prev => 
@@ -269,8 +337,8 @@ export default function Applications() {
   const handleAddRow = () => {
     const newApplication: Application = {
       id: `app-${Date.now()}`,
-      candidateId: mockCandidates[0]?.id || '',
-      jobId: mockJobs[0]?.id || '',
+      candidateId: '',
+      jobId: '',
       totalYears: 0,
       currentJobTitle: '',
       ctcInLPA: 0,
@@ -299,68 +367,235 @@ export default function Applications() {
     })
   }
 
+  const handleColumnVisibilityChange = (columnKey: string, visible: boolean) => {
+    setColumns(prev => 
+      prev.map(col => 
+        col.key === columnKey ? { ...col, visible } : col
+      )
+    )
+  }
+
+  const handleColumnReorder = (newColumns: Column[]) => {
+    setColumns(newColumns)
+  }
+
   const getSelectedApplications = () => {
     return applications.filter(application => selectedRows.includes(application.id))
   }
 
-  const handleCopyAsText = () => {
+  const handleCopyAsText = async (visibleColumns: Column[]) => {
     const selectedApplications = getSelectedApplications()
-    const textContent = selectedApplications.map(app => {
-      const candidateName = candidateMap[app.candidateId] || 'Unknown'
-      const jobTitle = jobMap[app.jobId] || 'Unknown'
+    
+    if (selectedApplications.length === 0) {
+      toast({
+        title: "No applications selected",
+        description: "Please select applications to copy.",
+        variant: "destructive"
+      })
+      return
+    }
+    
+    // Create simple, clean text format that looks professional in emails
+    const textContent = selectedApplications.map((application, index) => {
+      const candidate = mockCandidates.find(c => c.id === application.candidateId)
+      const job = mockJobs.find(j => j.id === application.jobId)
+      const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown'
       
-      return `<div style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">
-        <h3 style="margin: 0 0 10px 0; color: #333;">${candidateName} - ${jobTitle}</h3>
-        <p><strong>Current Role:</strong> ${app.currentJobTitle} at ${app.currentCompany}</p>
-        <p><strong>Experience:</strong> ${app.totalYears} years total, ${app.relevantExpYears} years relevant</p>
-        <p><strong>CTC:</strong> Current ${app.ctcInLPA} LPA, Expected ${app.ectcInLPA} LPA</p>
-        <p><strong>Notice Period:</strong> ${app.officialNoticePeriodInDays} days (${app.noticePeriodNegotiable} negotiable)</p>
-        <p><strong>Location:</strong> ${app.currentLocation}</p>
-        <p><strong>Status:</strong> ${APPLICATION_STATUS_LABELS[app.applicationStatus as keyof typeof APPLICATION_STATUS_LABELS]}</p>
-        <p><strong>Likelihood:</strong> ${app.likelihoodOfJoining}</p>
-      </div>`
+      return `${index + 1}. ${candidateName}
+Job: ${job?.jobTitle || 'Unknown Job'}
+Current Role: ${application.currentJobTitle}
+Experience: ${application.totalYears} years (${application.relevantExpYears} relevant)
+Current CTC: ₹${application.ctcInLPA} LPA
+Expected CTC: ₹${application.ectcInLPA} LPA
+Notice Period: ${application.officialNoticePeriodInDays} days (${application.noticePeriodNegotiable} negotiable)
+Status: ${APPLICATION_STATUS_LABELS[application.applicationStatus as keyof typeof APPLICATION_STATUS_LABELS]}
+Likelihood: ${application.likelihoodOfJoining}`
+    }).join('\n\n')
+
+    // Add header text
+    const fullContent = `Dear Client,
+
+Please find below the application details:
+
+${textContent}`
+
+    try {
+      await navigator.clipboard.writeText(fullContent)
+      toast({
+        title: "Copied as text",
+        description: `${selectedApplications.length} applications copied in text format for email.`,
+      })
+    } catch (error) {
+      toast({
+        title: "Copy failed",
+        description: "Unable to copy to clipboard. Please try again.",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleCopyAsSpreadsheet = async (visibleColumns: Column[]) => {
+    const selectedApplications = getSelectedApplications()
+    
+    if (selectedApplications.length === 0) {
+      toast({
+        title: "No applications selected",
+        description: "Please select applications to export.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    // Create HTML table headers based on visible columns
+    const headers = visibleColumns.map(col => 
+      `<th style="border: 1px solid #ccc; padding: 8px; text-align: left; background-color: #f5f5f5;">${col.label}</th>`
+    ).join('')
+
+    // Create HTML table rows based on visible columns
+    const tableRows = selectedApplications.map(application => {
+      const cells = visibleColumns.map(col => {
+        let value: any = application[col.key as keyof Application]
+        
+        // Handle special rendering
+        if (col.key === 'candidateName') {
+          const candidate = mockCandidates.find(c => c.id === application.candidateId)
+          value = candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown'
+        } else if (col.key === 'jobTitle') {
+          const job = mockJobs.find(j => j.id === application.jobId)
+          value = job ? job.jobTitle : 'Unknown Job'
+        } else if (col.key === 'ctcInLPA' || col.key === 'ectcInLPA') {
+          value = `₹${value} LPA`
+        } else if (col.key === 'officialNoticePeriodInDays') {
+          value = `${value} days`
+        } else if (col.key === 'relevantExpYears') {
+          value = `${value} years`
+        } else if (col.key === 'applicationStage') {
+          value = APPLICATION_STAGE_LABELS[value as keyof typeof APPLICATION_STAGE_LABELS]
+        } else if (col.key === 'applicationStatus') {
+          value = APPLICATION_STATUS_LABELS[value as keyof typeof APPLICATION_STATUS_LABELS]
+        } else if (col.key === 'createdOn' || col.key === 'lastModifiedOn' || col.key === 'dateOfJoining' || col.key === 'lastWorkingDate' || col.key === 'earliestJoiningDate') {
+          value = value ? new Date(value as string).toLocaleDateString() : 'N/A'
+        } else if (Array.isArray(value)) {
+          value = value.join(', ')
+        }
+        
+        return `<td style="border: 1px solid #ccc; padding: 8px;">${value || ''}</td>`
+      }).join('')
+      
+      return `<tr>${cells}</tr>`
     }).join('')
 
-    navigator.clipboard.writeText(textContent)
-    toast({
-      title: "Copied as text",
-      description: `${selectedApplications.length} applications copied in HTML format.`,
-    })
+    // Create complete HTML table with proper styling for email clients
+    const htmlTable = `<p>Dear Client,</p>
+<table style="border-collapse: collapse; width: 100%; font-family: Arial, sans-serif;">
+  <thead>
+    <tr>${headers}</tr>
+  </thead>
+  <tbody>
+    ${tableRows}
+  </tbody>
+</table>`
+
+    try {
+      // Use ClipboardItem API for proper HTML copying
+      const clipboardItem = new ClipboardItem({
+        'text/html': new Blob([htmlTable], { type: 'text/html' }),
+        'text/plain': new Blob([htmlTable.replace(/<[^>]*>/g, '')], { type: 'text/plain' })
+      })
+      
+      await navigator.clipboard.write([clipboardItem])
+      
+      toast({
+        title: "Copied as spreadsheet",
+        description: `${selectedApplications.length} applications copied as HTML table. Paste into email.`,
+      })
+    } catch (error) {
+      // Fallback for browsers that don't support ClipboardItem
+      try {
+        await navigator.clipboard.writeText(htmlTable)
+        toast({
+          title: "Copied as spreadsheet",
+          description: `${selectedApplications.length} applications copied. Paste into email.`,
+        })
+      } catch (fallbackError) {
+        toast({
+          title: "Copy failed",
+          description: "Unable to copy to clipboard. Please try again.",
+          variant: "destructive"
+        })
+      }
+    }
   }
 
-  const handleCopyAsSpreadsheet = () => {
+  const handleExportToXLS = (visibleColumns: Column[]) => {
     const selectedApplications = getSelectedApplications()
-    const headers = [
-      'Candidate', 'Job', 'Current Role', 'Company', 'Total Exp', 'Current CTC', 
-      'Expected CTC', 'Notice Period', 'Location', 'Status', 'Likelihood'
-    ]
-    const rows = selectedApplications.map(app => [
-      candidateMap[app.candidateId] || 'Unknown',
-      jobMap[app.jobId] || 'Unknown',
-      app.currentJobTitle,
-      app.currentCompany,
-      `${app.totalYears} yrs`,
-      `${app.ctcInLPA} LPA`,
-      `${app.ectcInLPA} LPA`,
-      `${app.officialNoticePeriodInDays} days`,
-      app.currentLocation,
-      APPLICATION_STATUS_LABELS[app.applicationStatus as keyof typeof APPLICATION_STATUS_LABELS],
-      app.likelihoodOfJoining
-    ])
+    
+    if (selectedApplications.length === 0) {
+      toast({
+        title: "No applications selected",
+        description: "Please select applications to export.",
+        variant: "destructive"
+      })
+      return
+    }
 
-    const tsvContent = [headers, ...rows].map(row => row.join('\t')).join('\n')
-    navigator.clipboard.writeText(tsvContent)
-    toast({
-      title: "Copied as spreadsheet",
-      description: `${selectedApplications.length} applications copied in spreadsheet format.`,
+    // Prepare data for Excel export based on visible columns
+    const exportData = selectedApplications.map(application => {
+      const row: any = {}
+      
+      visibleColumns.forEach(col => {
+        let value: any = application[col.key as keyof Application]
+        
+        // Handle special formatting
+        if (col.key === 'candidateName') {
+          const candidate = mockCandidates.find(c => c.id === application.candidateId)
+          value = candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Unknown'
+        } else if (col.key === 'jobTitle') {
+          const job = mockJobs.find(j => j.id === application.jobId)
+          value = job ? job.jobTitle : 'Unknown Job'
+        } else if (col.key === 'ctcInLPA' || col.key === 'ectcInLPA') {
+          value = `₹${value} LPA`
+        } else if (col.key === 'officialNoticePeriodInDays') {
+          value = `${value} days`
+        } else if (col.key === 'relevantExpYears') {
+          value = `${value} years`
+        } else if (col.key === 'applicationStage') {
+          value = APPLICATION_STAGE_LABELS[value as keyof typeof APPLICATION_STAGE_LABELS]
+        } else if (col.key === 'applicationStatus') {
+          value = APPLICATION_STATUS_LABELS[value as keyof typeof APPLICATION_STATUS_LABELS]
+        } else if (col.key === 'createdOn' || col.key === 'lastModifiedOn' || col.key === 'dateOfJoining' || col.key === 'lastWorkingDate' || col.key === 'earliestJoiningDate') {
+          value = value ? new Date(value as string).toLocaleDateString() : 'N/A'
+        } else if (Array.isArray(value)) {
+          value = value.join(', ')
+        }
+        
+        row[col.label] = value || ''
+      })
+      
+      return row
     })
-  }
 
-  const handleExportToXLS = () => {
-    const selectedApplications = getSelectedApplications()
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(exportData)
+
+    // Set column widths based on visible columns
+    const colWidths = visibleColumns.map(col => ({ wch: col.width ? col.width / 8 : 15 }))
+    ws['!cols'] = colWidths
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Applications')
+
+    // Generate filename with timestamp
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-')
+    const filename = `applications-export-${timestamp}.xlsx`
+
+    // Save file
+    XLSX.writeFile(wb, filename)
+
     toast({
-      title: "Export to XLS",
-      description: `Would export ${selectedApplications.length} applications to Excel file.`,
+      title: "Export successful",
+      description: `${selectedApplications.length} applications exported to ${filename}`,
     })
   }
 
@@ -378,6 +613,8 @@ export default function Applications() {
         searchValue={searchValue}
         onSearchChange={setSearchValue}
         title="Applications"
+        onColumnVisibilityChange={handleColumnVisibilityChange}
+        onColumnReorder={handleColumnReorder}
         exportOptions={{
           onCopyAsText: handleCopyAsText,
           onCopyAsSpreadsheet: handleCopyAsSpreadsheet,
